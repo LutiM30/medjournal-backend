@@ -2,7 +2,7 @@ const cors = require('cors');
 const express = require('express');
 require('dotenv').config();
 const cookieParser = require('cookie-parser');
-const { errorHandler } = require('./src/middleware');
+const { errorHandler, authMiddleware } = require('./src/middleware');
 const userRoutes = require('./src/routes/userRoutes');
 
 const creteApp = () => {
@@ -15,7 +15,7 @@ const creteApp = () => {
   app.use(cookieParser());
 
   // Routes
-  app.use('/api/users', userRoutes);
+  app.use('/api/users', authMiddleware, userRoutes);
 
   // Error handling middleware
   app.use(errorHandler);
