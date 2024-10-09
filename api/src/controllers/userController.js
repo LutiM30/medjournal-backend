@@ -1,46 +1,55 @@
 const { Timestamp } = require('firebase-admin/firestore');
-const { auth, firestore } = require('../config/firebase');
-const { VALID_ROLES, ADMIN_ROLE, COLLECTIONS } = require('../utils/constants');
+const { auth } = require('../config/firebase');
+const { VALID_ROLES, ADMIN_ROLE } = require('../utils/constants');
+const { uid } = require('uid');
+const { AddToDatabase } = require('../utils/functions');
 
 exports.createUserRole = async (req, res, next) => {
-  try {
-    const { body, user } = req;
+  const { body, user } = req;
+  const isAdminClaim = String(user.email).includes(process.env.ADMIN_EMAIL);
 
-    if (String(user.email).includes(process.env.ADMIN_EMAIL)) {
-      delete body.role;
-      auth.setCustomUserClaims(user.uid, { role: ADMIN_ROLE, admin: true });
+  if (VALID_ROLES.includes(body.role)) {
+    try {
+      const customUserClaimsObj = { role: body.role, admin: false };
+      let databaseResponse = '';
+      if (isAdminClaim) {
+        customUserClaimsObj.admin = true;
+        customUserClaimsObj.role = ADMIN_ROLE;
+      } else {
+        const data = {
+          uid: user.uid,
+          isProfileComplete: false,
+          createdAt: Timestamp.now(),
+        };
+        data[`${body.role}_id`] = `${String(body.role).substring(0, 3)}_${uid(
+          6
+        )}`;
 
-      const adminRef = firestore.collection(COLLECTIONS.ADMINS).doc(user.uid);
-      const userRef = firestore.collection(COLLECTIONS.USERS).doc(user.uid);
+        databaseResponse = await AddToDatabase(data, body.role);
+        databaseResponse = await databaseResponse?.data();
+      }
 
-      const toAdminFirebase = {
-        uid: user.uid,
-        email: user.email,
-        createdAt: Timestamp.now(),
+      auth.setCustomUserClaims(user.uid, customUserClaimsObj);
+      const displayName = `${body.firstName} ${body.lastName}`;
+      auth.updateUser(user.uid, { displayName });
+
+      const responseObj = {
+        displayName,
+        ...customUserClaimsObj,
+        createdAt: Timestamp.now()?.toDate()?.toDateString(),
+        profile: { ...databaseResponse },
       };
-      const toUserFirebase = {
-        uid: user.uid,
-        email: user.email,
-        createdAt: Timestamp.now(),
-      };
-
-      await adminRef.set(toAdminFirebase);
-      await userRef.set(toUserFirebase);
-      toUserFirebase.createdAt = toUserFirebase.createdAt
+      responseObj.profile.createdAt = responseObj.profile.createdAt
         ?.toDate()
-        ?.toDateString();
-
-      res.status(201).send(toUserFirebase);
-    } else if (VALID_ROLES.includes(body.role)) {
-      auth.setCustomUserClaims(user.uid, { role: body.role, admin: false });
-      res.status(201).send({ uid: user.uid, role: body.role });
-    } else {
-      res.status(422).send({
-        error: 'Invalid Role Selection',
-        message: 'Please select proper role to continue',
-      });
+        .toDateString();
+      res.status(201).send(responseObj);
+    } catch (error) {
+      next(error);
     }
-  } catch (error) {
-    next(error);
+  } else {
+    res.status(422).send({
+      error: 'Invalid Role Selection',
+      message: 'Please select proper role to continue',
+    });
   }
 };

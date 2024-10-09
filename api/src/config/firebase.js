@@ -10,4 +10,4 @@ const auth = admin.auth();
 const firestore = admin.firestore();
 const storage = admin.storage();
 
-module.exports = { auth, firestore, storage };
+module.exports = { admin, auth, firestore, storage };
