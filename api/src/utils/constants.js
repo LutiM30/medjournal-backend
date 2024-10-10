@@ -10,10 +10,16 @@ const COLLECTIONS = {
 };
 const VALID_ROLES = [PATIENT_ROLE, DOCTOR_ROLE];
 
+const MESSAGES = {
+  userRole: 'User Role is required',
+  InvalidUserRole: 'Invalid selection of Role',
+};
+
 module.exports = {
   PATIENT_ROLE,
   DOCTOR_ROLE,
   VALID_ROLES,
   ADMIN_ROLE,
   COLLECTIONS,
+  MESSAGES,
 };

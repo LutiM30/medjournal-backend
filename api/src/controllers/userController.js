@@ -1,40 +1,81 @@
 const { Timestamp } = require('firebase-admin/firestore');
-const { auth, firestore } = require('../config/firebase');
-const { VALID_ROLES, ADMIN_ROLE, COLLECTIONS } = require('../utils/constants');
+const { auth, admin } = require('../config/firebase');
+const { VALID_ROLES, ADMIN_ROLE } = require('../utils/constants');
+const { uid } = require('uid');
+const { AddToDatabase } = require('../utils/functions');
+const uniqueID = uid;
 
-exports.createUserRole = async (req, res, next) => {
+exports.signUp = async (req, res, next) => {
+  const { email, password, firstName, lastName, role } = req.body;
+
   try {
-    const { body, user } = req;
+    const displayName = `${firstName} ${lastName}`;
 
-    if (String(user.email).includes(process.env.ADMIN_EMAIL)) {
-      delete body.role;
-      auth.setCustomUserClaims(user.uid, { role: ADMIN_ROLE, admin: true });
+    const userRecord = await admin.auth().createUser({
+      email,
+      password,
+      displayName,
+    });
 
-      const adminRef = firestore.collection(COLLECTIONS.ADMINS).doc(user.uid);
-      const userRef = firestore.collection(COLLECTIONS.USERS).doc(user.uid);
+    const uid = userRecord?.uid;
 
-      const toAdminFirebase = {
-        uid: user.uid,
-        email: user.email,
-        createdAt: Timestamp.now(),
+    const isAdminClaim = String(email).includes(process.env.ADMIN_EMAIL);
+
+    if (VALID_ROLES.includes(role)) {
+      const customUserClaimsObj = { role: role, admin: false };
+      let databaseResponse = '';
+
+      if (isAdminClaim) {
+        customUserClaimsObj.admin = true;
+        customUserClaimsObj.role = ADMIN_ROLE;
+      } else {
+        // Prepare data for non-admin users
+        const data = {
+          uid,
+          isProfileComplete: false,
+          createdAt: Timestamp.now(),
+        };
+
+        // Generate a custom ID for the user
+        const customID = `${String(role).substring(0, 3)}_${uniqueID(6)}`;
+        data[`${role}_id`] = customID;
+
+        // Add user data to the database
+        databaseResponse = await AddToDatabase(data, role);
+        databaseResponse = await databaseResponse?.data();
+      }
+
+      // Set custom claims for the user
+      await auth.setCustomUserClaims(uid, customUserClaimsObj);
+
+      const responseObj = {
+        uid,
+        firstName,
+        lastName,
+        ...customUserClaimsObj,
+        createdAt: Timestamp.now()?.toDate()?.toDateString(),
+        profile: { ...databaseResponse },
       };
-      const toUserFirebase = {
-        uid: user.uid,
-        email: user.email,
-        createdAt: Timestamp.now(),
-      };
 
-      await adminRef.set(toAdminFirebase);
-      await userRef.set(toUserFirebase);
-      toUserFirebase.createdAt = toUserFirebase.createdAt
-        ?.toDate()
-        ?.toDateString();
+      // Create a custom token for the user
+      const token = await admin
+        .auth()
+        .createCustomToken(uid, customUserClaimsObj);
 
-      res.status(201).send(toUserFirebase);
-    } else if (VALID_ROLES.includes(body.role)) {
-      auth.setCustomUserClaims(user.uid, { role: body.role, admin: false });
-      res.status(201).send({ uid: user.uid, role: body.role });
+      if (responseObj.profile && responseObj.profile.createdAt) {
+        responseObj.profile.createdAt = responseObj.profile.createdAt
+          ?.toDate()
+          .toDateString();
+      }
+
+      // Send successful response
+      res.status(201).send({
+        message: `Welcome to MedJournal, ${displayName}`,
+        user: responseObj,
+        token,
+      });
     } else {
+      // Send error response for invalid role
       res.status(422).send({
         error: 'Invalid Role Selection',
         message: 'Please select proper role to continue',

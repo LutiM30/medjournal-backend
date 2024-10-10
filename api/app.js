@@ -15,7 +15,7 @@ const creteApp = () => {
   app.use(cookieParser());
 
   // Routes
-  app.use('/api/users', authMiddleware, userRoutes);
+  app.use('/users', userRoutes);
 
   // Error handling middleware
   app.use(errorHandler);
