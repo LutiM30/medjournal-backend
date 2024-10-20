@@ -1,8 +1,8 @@
-const { Timestamp } = require('firebase-admin/firestore');
-const { auth, admin } = require('../config/firebase');
-const { VALID_ROLES, ADMIN_ROLE } = require('../utils/constants');
-const { uid } = require('uid');
-const { AddToDatabase } = require('../utils/functions');
+const { Timestamp } = require("firebase-admin/firestore");
+const { auth, admin } = require("../config/firebase");
+const { VALID_ROLES, ADMIN_ROLE } = require("../utils/constants");
+const { uid } = require("uid");
+const { AddToDatabase } = require("../utils/functions");
 const uniqueID = uid;
 
 exports.signUp = async (req, res, next) => {
@@ -23,7 +23,7 @@ exports.signUp = async (req, res, next) => {
 
     if (VALID_ROLES.includes(role)) {
       const customUserClaimsObj = { role: role, admin: false };
-      let databaseResponse = '';
+      let databaseResponse = "";
 
       if (isAdminClaim) {
         customUserClaimsObj.admin = true;
@@ -77,11 +77,47 @@ exports.signUp = async (req, res, next) => {
     } else {
       // Send error response for invalid role
       res.status(422).send({
-        error: 'Invalid Role Selection',
-        message: 'Please select proper role to continue',
+        error: "Invalid Role Selection",
+        message: "Please select proper role to continue",
       });
     }
   } catch (error) {
     next(error);
+  }
+};
+
+exports.getUserData = async (req, res, next) => {
+  const { query } = req;
+  const { ids } = query;
+
+  if (!ids) {
+    res.status(400).send({
+      error: "Invalid Query",
+      message: "Please provide ids to get data",
+    });
+  } else {
+    const idsArr = ids.split(",");
+    const getDataArr = idsArr.map((id) => ({ uid: id }));
+
+    try {
+      const users = await auth.getUsers(getDataArr);
+
+      const userJSON = users.users.map((user) => user?.toJSON());
+      const notFound = [];
+
+      if (users?.notFound?.length) {
+        users?.notFound?.forEach((user) => notFound.push(user?.uid));
+      }
+
+      console.log({ userJSON, notFound });
+      const responseObj = {
+        users: userJSON,
+        notFound,
+      };
+
+      res.status(200).send(responseObj);
+    } catch (error) {
+      next(error);
+    }
   }
 };
