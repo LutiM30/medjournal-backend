@@ -8,7 +8,6 @@ const AddToDatabase = async (data, role) => {
     try {
       const collectionRef = firestore.collection(role);
       const docRef = collectionRef.doc(data.uid);
-      console.log(role, data.uid, docRef.path);
 
       await docRef.set(data);
       return await docRef.get();
