@@ -260,7 +260,7 @@ async function fetchAndProcessAllUsers(search) {
   let nextPageToken;
 
   do {
-    const batch = await auth().listUsers(1000, nextPageToken);
+    const batch = await auth.listUsers(1000, nextPageToken);
     const processedBatch = await Promise.all(
       batch.users.map(processUserRecord)
     );
@@ -278,7 +278,7 @@ async function fetchAndProcessAllUsers(search) {
  */
 async function fetchUsersBatch(page) {
   if (page === 0) {
-    return auth().listUsers(PAGE_SIZE);
+    return auth.listUsers(PAGE_SIZE);
   }
 
   const nextPageToken = pageTokensMap.get(page);
@@ -288,7 +288,7 @@ async function fetchUsersBatch(page) {
     throw error;
   }
 
-  return auth().listUsers(PAGE_SIZE, nextPageToken);
+  return auth.listUsers(PAGE_SIZE, nextPageToken);
 }
 
 /**
