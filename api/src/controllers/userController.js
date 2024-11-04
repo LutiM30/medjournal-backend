@@ -3,7 +3,7 @@ const { auth, admin, firestore } = require('../config/firebase');
 const { VALID_ROLES, ADMIN_ROLE } = require('../utils/constants');
 const { uid } = require('uid');
 const { AddToDatabase } = require('../utils/functions');
-const SearchQuery = require('../utils/SearchQuery');
+const SearchQuery = require('../utils/SearchQuery.js');
 const uniqueID = uid;
 
 exports.signUp = async (req, res, next) => {
