@@ -1,6 +1,7 @@
 const PATIENT_ROLE = 'patients';
 const DOCTOR_ROLE = 'doctors';
 const ADMIN_ROLE = 'admin@medjournal';
+const CACHE_DURATION = 5 * 60 * 1000;
 
 const COLLECTIONS = {
   USERS: 'users',
@@ -22,4 +23,5 @@ module.exports = {
   ADMIN_ROLE,
   COLLECTIONS,
   MESSAGES,
+  CACHE_DURATION,
 };

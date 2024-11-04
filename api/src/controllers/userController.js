@@ -1,6 +1,10 @@
 const { Timestamp } = require('firebase-admin/firestore');
 const { auth, admin, firestore } = require('../config/firebase');
-const { VALID_ROLES, ADMIN_ROLE } = require('../utils/constants');
+const {
+  VALID_ROLES,
+  ADMIN_ROLE,
+  CACHE_DURATION,
+} = require('../utils/constants');
 const { uid } = require('uid');
 const { AddToDatabase } = require('../utils/functions');
 const SearchQuery = require('../utils/searchQuery.js');
@@ -139,20 +143,25 @@ const processUserRecord = async (userRecord) => {
   }
 };
 
+// Cache configurations
+const PAGE_SIZE = 10;
 const pageTokensMap = new Map();
 const searchResultsCache = new Map();
 
+/**
+ * Get all users with pagination and search support
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
 exports.getAllUsersData = async (req, res, next) => {
   const { body } = req;
   const { search } = body;
-  const page = parseInt(body.page) || 0;
-  const PAGE_SIZE = 10;
+  const page = Math.max(0, parseInt(body.page) || 0); // Ensure non-negative page
 
   try {
-    const { user } = req;
-
-    // Verify admin access
-    if (!user || user.role !== ADMIN_ROLE) {
+    // Validate admin access
+    if (!req.user?.role === ADMIN_ROLE) {
       return res.status(403).json({
         status: 'error',
         error: 'Forbidden',
@@ -160,104 +169,13 @@ exports.getAllUsersData = async (req, res, next) => {
       });
     }
 
-    // Handle search case
-    if (search?.length) {
-      const cacheKey = JSON.stringify(search);
-      let allSearchResults = searchResultsCache.get(cacheKey);
-
-      if (!allSearchResults) {
-        // Fetch all users for search
-        let allUsers = [];
-        let nextPageToken = undefined;
-
-        do {
-          const batch = await auth.listUsers(1000, nextPageToken);
-          const userPromises = batch.users.map(processUserRecord);
-          const processedUsers = await Promise.all(userPromises);
-          allUsers = allUsers.concat(
-            processedUsers.filter((user) => user !== null)
-          );
-          nextPageToken = batch.pageToken;
-        } while (nextPageToken);
-
-        // Perform search on all users
-        allSearchResults = SearchQuery(search, allUsers);
-
-        // Cache the results for subsequent pages
-        searchResultsCache.set(cacheKey, allSearchResults);
-
-        // Clear old cache entries after 5 minutes
-        setTimeout(() => {
-          searchResultsCache.delete(cacheKey);
-        }, 5 * 60 * 1000);
-      }
-
-      // Paginate search results
-      const startIndex = page * PAGE_SIZE;
-      const paginatedResults = allSearchResults.slice(
-        startIndex,
-        startIndex + PAGE_SIZE
-      );
-
-      return res.status(200).json({
-        status: 'success',
-        data: {
-          users: paginatedResults,
-          totalCount: allSearchResults.length,
-          currentPage: page,
-          totalPages: Math.ceil(allSearchResults.length / PAGE_SIZE),
-          hasNextPage: startIndex + PAGE_SIZE < allSearchResults.length,
-        },
-      });
+    // Handle search functionality
+    if (Array.isArray(search) && search.length > 0) {
+      return await handleSearchRequest(search, page, res);
     }
 
-    // Handle regular listing case
-    let listUsersResult;
-    if (page === 0) {
-      listUsersResult = await auth.listUsers(PAGE_SIZE);
-    } else {
-      const nextPageToken = pageTokensMap.get(page);
-      if (!nextPageToken) {
-        return res.status(400).json({
-          status: 'error',
-          error: 'Invalid Page',
-          message: 'The requested page is not available',
-        });
-      }
-      listUsersResult = await auth.listUsers(PAGE_SIZE, nextPageToken);
-    }
-
-    // Store the next page token if it exists
-    if (listUsersResult.pageToken) {
-      pageTokensMap.set(page + 1, listUsersResult.pageToken);
-
-      // Clear old tokens after 5 minutes
-      setTimeout(() => {
-        pageTokensMap.delete(page + 1);
-      }, 5 * 60 * 1000);
-    }
-
-    // Process users
-    const userPromises = listUsersResult.users.map(processUserRecord);
-    const users = await Promise.all(userPromises);
-    const validUsers = users.filter((user) => user !== null);
-
-    // Create pageTokens array for response
-    const pageTokens = [];
-    for (let i = 0; i <= page + 1; i++) {
-      pageTokens[i] = pageTokensMap.has(i);
-    }
-
-    return res.status(200).json({
-      status: 'success',
-      data: {
-        users: validUsers,
-        totalCount: validUsers.length,
-        currentPage: page,
-        pageTokens,
-        hasNextPage: Boolean(listUsersResult.pageToken),
-      },
-    });
+    // Handle regular listing
+    return await handleRegularListing(page, res);
   } catch (error) {
     console.error('Error listing users:', error);
     return res.status(500).json({
@@ -269,39 +187,216 @@ exports.getAllUsersData = async (req, res, next) => {
 };
 
 /**
- * Helper function to determine if cache or tokens are still valid
- * @param {Map} cache - The cache Map to check
- * @param {string|number} key - The key to check
- * @returns {boolean} - Whether the cache entry is still valid
+ * Handle search-based user requests
+ * @param {string[]} search - Search terms
+ * @param {number} page - Page number
+ * @param {Object} res - Express response object
  */
-function isCacheValid(cache, key) {
-  const entry = cache.get(key);
-  return entry && Date.now() - entry.timestamp < 5 * 60 * 1000; // 5 minutes
+async function handleSearchRequest(search, page, res) {
+  const cacheKey = JSON.stringify(search);
+  let searchResults = searchResultsCache.get(cacheKey);
+
+  if (!searchResults || !isCacheValid(searchResultsCache, cacheKey)) {
+    searchResults = await fetchAndProcessAllUsers(search);
+    cacheSearchResults(cacheKey, searchResults);
+  }
+
+  const paginatedData = paginateResults(searchResults, page);
+
+  return res.status(200).json({
+    status: 'success',
+    data: {
+      ...paginatedData,
+      totalPages: Math.ceil(searchResults.length / PAGE_SIZE),
+    },
+  });
 }
 
 /**
- * Cleans up expired cache entries and tokens
+ * Handle regular user listing requests
+ * @param {number} page - Page number
+ * @param {Object} res - Express response object
  */
-function cleanupCaches() {
+async function handleRegularListing(page, res) {
+  try {
+    const { users, pageToken } = await fetchUsersBatch(page);
+
+    if (pageToken) {
+      updatePageTokenCache(page + 1, pageToken);
+    }
+
+    const processedUsers = await processUsers(users);
+    const pageTokens = generatePageTokensArray(page);
+
+    return res.status(200).json({
+      status: 'success',
+      data: {
+        users: processedUsers,
+        totalCount: processedUsers.length,
+        currentPage: page,
+        pageTokens,
+        hasNextPage: Boolean(pageToken),
+      },
+    });
+  } catch (error) {
+    if (error.code === 'INVALID_PAGE') {
+      return res.status(400).json({
+        status: 'error',
+        error: 'Invalid Page',
+        message: 'The requested page is not available',
+      });
+    }
+    throw error;
+  }
+}
+
+/**
+ * Fetch and process all users for search
+ * @param {string[]} search - Search terms
+ * @returns {Promise<Array>} Processed and filtered users
+ */
+async function fetchAndProcessAllUsers(search) {
+  const allUsers = [];
+  let nextPageToken;
+
+  do {
+    const batch = await auth().listUsers(1000, nextPageToken);
+    const processedBatch = await Promise.all(
+      batch.users.map(processUserRecord)
+    );
+    allUsers.push(...processedBatch.filter(Boolean));
+    nextPageToken = batch.pageToken;
+  } while (nextPageToken);
+
+  return SearchQuery(search, allUsers);
+}
+
+/**
+ * Fetch a batch of users for regular listing
+ * @param {number} page - Page number
+ * @returns {Promise<Object>} Users and page token
+ */
+async function fetchUsersBatch(page) {
+  if (page === 0) {
+    return auth().listUsers(PAGE_SIZE);
+  }
+
+  const nextPageToken = pageTokensMap.get(page);
+  if (!nextPageToken) {
+    const error = new Error('Invalid page requested');
+    error.code = 'INVALID_PAGE';
+    throw error;
+  }
+
+  return auth().listUsers(PAGE_SIZE, nextPageToken);
+}
+
+/**
+ * Process a batch of user records
+ * @param {Array} users - Array of user records
+ * @returns {Promise<Array>} Processed user records
+ */
+async function processUsers(users) {
+  const processed = await Promise.all(users.map(processUserRecord));
+  return processed.filter(Boolean);
+}
+
+/**
+ * Cache search results with expiration
+ * @param {string} key - Cache key
+ * @param {Array} results - Search results
+ */
+function cacheSearchResults(key, results) {
+  searchResultsCache.set(key, {
+    data: results,
+    timestamp: Date.now(),
+  });
+
+  setTimeout(() => {
+    if (searchResultsCache.has(key)) {
+      searchResultsCache.delete(key);
+    }
+  }, CACHE_DURATION);
+}
+
+/**
+ * Update page token cache
+ * @param {number} page - Page number
+ * @param {string} token - Page token
+ */
+function updatePageTokenCache(page, token) {
+  pageTokensMap.set(page, {
+    token,
+    timestamp: Date.now(),
+  });
+
+  setTimeout(() => {
+    if (pageTokensMap.has(page)) {
+      pageTokensMap.delete(page);
+    }
+  }, CACHE_DURATION);
+}
+
+/**
+ * Generate page tokens array
+ * @param {number} currentPage - Current page number
+ * @returns {Array<boolean>} Array of page token availability
+ */
+function generatePageTokensArray(currentPage) {
+  const pageTokens = [];
+  for (let i = 0; i <= currentPage + 1; i++) {
+    pageTokens[i] = pageTokensMap.has(i);
+  }
+  return pageTokens;
+}
+
+/**
+ * Paginate search results
+ * @param {Array} results - Search results
+ * @param {number} page - Page number
+ * @returns {Object} Paginated data
+ */
+function paginateResults(results, page) {
+  const startIndex = page * PAGE_SIZE;
+  const paginatedUsers = results.slice(startIndex, startIndex + PAGE_SIZE);
+
+  return {
+    users: paginatedUsers,
+    totalCount: results.length,
+    currentPage: page,
+    hasNextPage: startIndex + PAGE_SIZE < results.length,
+  };
+}
+
+/**
+ * Check if cache entry is still valid
+ * @param {Map} cache - Cache map
+ * @param {string|number} key - Cache key
+ * @returns {boolean} Cache validity
+ */
+function isCacheValid(cache, key) {
+  const entry = cache.get(key);
+  return entry?.timestamp && Date.now() - entry.timestamp < CACHE_DURATION;
+}
+
+// Cleanup job
+setInterval(() => {
   const now = Date.now();
 
-  // Clean up search results cache
+  // Cleanup search cache
   for (const [key, value] of searchResultsCache.entries()) {
-    if (now - value.timestamp > 5 * 60 * 1000) {
+    if (now - value.timestamp > CACHE_DURATION) {
       searchResultsCache.delete(key);
     }
   }
 
-  // Clean up page tokens
-  for (const [page, token] of pageTokensMap.entries()) {
-    if (now - token.timestamp > 5 * 60 * 1000) {
+  // Cleanup page tokens
+  for (const [page, value] of pageTokensMap.entries()) {
+    if (now - value.timestamp > CACHE_DURATION) {
       pageTokensMap.delete(page);
     }
   }
-}
-
-// Run cleanup every 5 minutes
-setInterval(cleanupCaches, 5 * 60 * 1000);
+}, CACHE_DURATION);
 
 exports.getUserData = async (req, res, next) => {
   const { query } = req;
