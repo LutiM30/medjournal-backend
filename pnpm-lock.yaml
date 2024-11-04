@@ -23,6 +23,9 @@ importers:
       firebase-admin:
         specifier: ^12.4.0
         version: 12.6.0
+      fuzzysort:
+        specifier: ^3.1.0
+        version: 3.1.0
       uid:
         specifier: ^2.0.2
         version: 2.0.2
@@ -598,6 +601,9 @@ packages:
 
   functional-red-black-tree@1.0.1:
     resolution: {integrity: sha512-dsKNQNdj6xA3T+QlADDA7mOSlX0qiMINjn0cgr+eGHGsbSHzTabcIogz2+p/iqP1Xs6EP/sS2SbqH+brGTbq0g==}
+
+  fuzzysort@3.1.0:
+    resolution: {integrity: sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ==}
 
   gaxios@6.7.1:
     resolution: {integrity: sha512-LDODD4TMYx7XXdpwxAVRAIAuB0bzv0s+ywFonY46k126qzQHT9ygyoa9tncmOiQmmDrik65UYsEkv3lbfqQ3yQ==}
@@ -1974,6 +1980,8 @@ snapshots:
 
   functional-red-black-tree@1.0.1:
     optional: true
+
+  fuzzysort@3.1.0: {}
 
   gaxios@6.7.1:
     dependencies:
