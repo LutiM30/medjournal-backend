@@ -5,6 +5,6 @@ const authMiddleware = require('../middleware/authMiddleware.js');
 
 router.post('/create-user', userController.signUp);
 router.get('/get-users', userController.getUserData);
-router.get('/get-all-users', authMiddleware, userController.getAllUsersData); // Retrieve all user data (requires authentication)
+router.post('/get-all-users', authMiddleware, userController.getAllUsersData); // Retrieve all user data (requires authentication)
 
 module.exports = router;

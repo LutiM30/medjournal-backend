@@ -3,6 +3,7 @@ const { auth, admin, firestore } = require('../config/firebase');
 const { VALID_ROLES, ADMIN_ROLE } = require('../utils/constants');
 const { uid } = require('uid');
 const { AddToDatabase } = require('../utils/functions');
+const SearchQuery = require('../utils/SearchQuery');
 const uniqueID = uid;
 
 exports.signUp = async (req, res, next) => {
@@ -138,11 +139,15 @@ const processUserRecord = async (userRecord) => {
   }
 };
 
-const pageTokensMap = new Map(); // Store pageTokens at module level
+const pageTokensMap = new Map();
+const searchResultsCache = new Map();
 
 exports.getAllUsersData = async (req, res, next) => {
-  const page = parseInt(req.query.page) || 0;
-  
+  const { body } = req;
+  const { search } = body;
+  const page = parseInt(body.page) || 0;
+  const PAGE_SIZE = 10;
+
   try {
     const { user } = req;
 
@@ -155,13 +160,62 @@ exports.getAllUsersData = async (req, res, next) => {
       });
     }
 
+    // Handle search case
+    if (search?.length) {
+      const cacheKey = JSON.stringify(search);
+      let allSearchResults = searchResultsCache.get(cacheKey);
+
+      if (!allSearchResults) {
+        // Fetch all users for search
+        let allUsers = [];
+        let nextPageToken = undefined;
+
+        do {
+          const batch = await auth.listUsers(1000, nextPageToken);
+          const userPromises = batch.users.map(processUserRecord);
+          const processedUsers = await Promise.all(userPromises);
+          allUsers = allUsers.concat(
+            processedUsers.filter((user) => user !== null)
+          );
+          nextPageToken = batch.pageToken;
+        } while (nextPageToken);
+
+        // Perform search on all users
+        allSearchResults = SearchQuery(search, allUsers);
+
+        // Cache the results for subsequent pages
+        searchResultsCache.set(cacheKey, allSearchResults);
+
+        // Clear old cache entries after 5 minutes
+        setTimeout(() => {
+          searchResultsCache.delete(cacheKey);
+        }, 5 * 60 * 1000);
+      }
+
+      // Paginate search results
+      const startIndex = page * PAGE_SIZE;
+      const paginatedResults = allSearchResults.slice(
+        startIndex,
+        startIndex + PAGE_SIZE
+      );
+
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          users: paginatedResults,
+          totalCount: allSearchResults.length,
+          currentPage: page,
+          totalPages: Math.ceil(allSearchResults.length / PAGE_SIZE),
+          hasNextPage: startIndex + PAGE_SIZE < allSearchResults.length,
+        },
+      });
+    }
+
+    // Handle regular listing case
     let listUsersResult;
-    
-    // For first page, don't pass any token
     if (page === 0) {
-      listUsersResult = await auth.listUsers(10);
+      listUsersResult = await auth.listUsers(PAGE_SIZE);
     } else {
-      // Get the page token for the requested page
       const nextPageToken = pageTokensMap.get(page);
       if (!nextPageToken) {
         return res.status(400).json({
@@ -170,19 +224,22 @@ exports.getAllUsersData = async (req, res, next) => {
           message: 'The requested page is not available',
         });
       }
-      listUsersResult = await auth.listUsers(10, nextPageToken);
+      listUsersResult = await auth.listUsers(PAGE_SIZE, nextPageToken);
     }
-    
+
     // Store the next page token if it exists
     if (listUsersResult.pageToken) {
       pageTokensMap.set(page + 1, listUsersResult.pageToken);
+
+      // Clear old tokens after 5 minutes
+      setTimeout(() => {
+        pageTokensMap.delete(page + 1);
+      }, 5 * 60 * 1000);
     }
 
-    // Process all users concurrently and wait for all promises to resolve
+    // Process users
     const userPromises = listUsersResult.users.map(processUserRecord);
     const users = await Promise.all(userPromises);
-
-    // Filter out any null results from failed processing
     const validUsers = users.filter((user) => user !== null);
 
     // Create pageTokens array for response
@@ -196,6 +253,7 @@ exports.getAllUsersData = async (req, res, next) => {
       data: {
         users: validUsers,
         totalCount: validUsers.length,
+        currentPage: page,
         pageTokens,
         hasNextPage: Boolean(listUsersResult.pageToken),
       },
@@ -209,6 +267,41 @@ exports.getAllUsersData = async (req, res, next) => {
     });
   }
 };
+
+/**
+ * Helper function to determine if cache or tokens are still valid
+ * @param {Map} cache - The cache Map to check
+ * @param {string|number} key - The key to check
+ * @returns {boolean} - Whether the cache entry is still valid
+ */
+function isCacheValid(cache, key) {
+  const entry = cache.get(key);
+  return entry && Date.now() - entry.timestamp < 5 * 60 * 1000; // 5 minutes
+}
+
+/**
+ * Cleans up expired cache entries and tokens
+ */
+function cleanupCaches() {
+  const now = Date.now();
+
+  // Clean up search results cache
+  for (const [key, value] of searchResultsCache.entries()) {
+    if (now - value.timestamp > 5 * 60 * 1000) {
+      searchResultsCache.delete(key);
+    }
+  }
+
+  // Clean up page tokens
+  for (const [page, token] of pageTokensMap.entries()) {
+    if (now - token.timestamp > 5 * 60 * 1000) {
+      pageTokensMap.delete(page);
+    }
+  }
+}
+
+// Run cleanup every 5 minutes
+setInterval(cleanupCaches, 5 * 60 * 1000);
 
 exports.getUserData = async (req, res, next) => {
   const { query } = req;
