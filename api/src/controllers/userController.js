@@ -6,6 +6,10 @@ const { AddToDatabase } = require('../utils/functions');
 const SearchQuery = require('../utils/searchQuery.js');
 const uniqueID = uid;
 
+exports.getUsersDataArr = (ids) => ids.map((id) => ({ uid: id }));
+exports.getUsersBasedOnId = async (ids = []) =>
+  await auth.getUsers(getUsersDataArr(ids));
+
 exports.signUp = async (req, res, next) => {
   const { email, password, firstName, lastName, role } = req.body;
 
@@ -142,6 +146,19 @@ const processUserRecord = async (userRecord) => {
 const pageTokensMap = new Map();
 const searchResultsCache = new Map();
 
+exports.isNotAdmin = (req, res) => {
+  const { user } = req;
+  if (!user || user.role !== ADMIN_ROLE) {
+    return res.status(403).json({
+      status: 'error',
+      error: 'Forbidden',
+      message: 'Insufficient permissions to access user data',
+    });
+  } else {
+    return false;
+  }
+};
+
 exports.getAllUsersData = async (req, res, next) => {
   const { body } = req;
   const { search } = body;
@@ -152,14 +169,7 @@ exports.getAllUsersData = async (req, res, next) => {
     const { user } = req;
 
     // Verify admin access
-    if (!user || user.role !== ADMIN_ROLE) {
-      return res.status(403).json({
-        status: 'error',
-        error: 'Forbidden',
-        message: 'Insufficient permissions to access user data',
-      });
-    }
-
+    this.isNotAdmin(req, res);
     // Handle search case
     if (search?.length) {
       const cacheKey = JSON.stringify(search);
@@ -314,10 +324,9 @@ exports.getUserData = async (req, res, next) => {
     });
   } else {
     const idsArr = ids.split(',');
-    const getDataArr = idsArr.map((id) => ({ uid: id }));
 
     try {
-      const users = await auth.getUsers(getDataArr);
+      const users = await getUsersBasedOnId(idsArr);
 
       const userJSON = users.users.map((user) => user?.toJSON());
       const notFound = [];
