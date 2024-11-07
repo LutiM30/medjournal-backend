@@ -8,7 +8,7 @@ const uniqueID = uid;
 
 exports.getUsersDataArr = (ids) => ids.map((id) => ({ uid: id }));
 exports.getUsersBasedOnId = async (ids = []) =>
-  await auth.getUsers(getUsersDataArr(ids));
+  await auth.getUsers(this.getUsersDataArr(ids));
 
 exports.signUp = async (req, res, next) => {
   const { email, password, firstName, lastName, role } = req.body;
