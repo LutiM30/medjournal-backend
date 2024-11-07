@@ -326,7 +326,7 @@ exports.getUserData = async (req, res, next) => {
     const idsArr = ids.split(',');
 
     try {
-      const users = await getUsersBasedOnId(idsArr);
+      const users = await this.getUsersBasedOnId(idsArr);
 
       const userJSON = users.users.map((user) => user?.toJSON());
       const notFound = [];
