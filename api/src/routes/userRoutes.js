@@ -5,7 +5,7 @@ const authMiddleware = require('../middleware/authMiddleware.js');
 const { updateUserAccount } = require('../controllers/updateUserAccount.js');
 
 router.post('/create-user', userController.signUp);
-router.get('/get-users', userController.getUserData);
+router.get('/get-users', authMiddleware, userController.getUserData);
 router.post('/get-all-users', authMiddleware, userController.getAllUsersData); // Retrieve all user data (requires authentication)
 
 /**
@@ -16,5 +16,11 @@ router.post('/get-all-users', authMiddleware, userController.getAllUsersData); /
  * @controller updateUserAccount - Calls the updateUserAccount controller to handle the request.
  */
 router.put('/update-user-account', authMiddleware, updateUserAccount); // Retrieve all user data (requires authentication)
+
+router.put(
+  '/update-photo-url',
+  authMiddleware,
+  userController.updateProfilePicture
+); // Retrieve all user data (requires authentication)
 
 module.exports = router;

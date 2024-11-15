@@ -346,3 +346,88 @@ exports.getUserData = async (req, res, next) => {
     }
   }
 };
+
+/**
+ * Updates a user's profile picture URL in Firebase Authentication
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {Promise<Object>} Response object with status and message
+ */
+exports.updateProfilePicture = async (req, res, next) => {
+  try {
+    const { photoURL } = req.body;
+    const { user } = req;
+    const { uid } = user;
+
+    if (!uid || typeof uid !== 'string') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'INVALID_UID',
+        message: 'Please provide a valid user ID',
+      });
+    }
+
+    if (!photoURL || typeof photoURL !== 'string' || !isValidUrl(photoURL)) {
+      return res.status(400).json({
+        status: 'error',
+        code: 'INVALID_URL',
+        message: 'Please provide a valid profile picture URL',
+      });
+    }
+
+    // Update the user's profile picture
+    await auth.updateUser(uid, { photoURL });
+
+    // Return success response
+    return res.status(200).json({
+      status: 'success',
+      message: 'Profile picture updated successfully',
+      data: {
+        uid,
+        photoURL,
+      },
+    });
+  } catch (error) {
+    // Handle specific Firebase Auth errors
+    if (error.code === 'auth/user-not-found') {
+      return res.status(404).json({
+        status: 'error',
+        code: 'USER_NOT_FOUND',
+        message: 'User not found',
+      });
+    }
+
+    if (error.code === 'auth/invalid-uid') {
+      return res.status(400).json({
+        status: 'error',
+        code: 'INVALID_UID_FORMAT',
+        message: 'Invalid user ID format',
+      });
+    }
+
+    // Log the error for debugging
+    console.error('Profile picture update error:', error);
+
+    // Return generic error for unhandled cases
+    return res.status(500).json({
+      status: 'error',
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'Failed to update profile picture',
+    });
+  }
+};
+
+/**
+ * Validates if the provided string is a valid URL
+ * @param {string} url - URL to validate
+ * @returns {boolean} True if URL is valid, false otherwise
+ */
+function isValidUrl(url) {
+  try {
+    new URL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
