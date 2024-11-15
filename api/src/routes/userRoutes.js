@@ -15,9 +15,9 @@ router.post('/get-all-users', authMiddleware, userController.getAllUsersData); /
  * @middleware authMiddleware - Requires authentication middleware to check user permissions.
  * @controller updateUserAccount - Calls the updateUserAccount controller to handle the request.
  */
-router.put('/update-user-account', authMiddleware, updateUserAccount); // Retrieve all user data (requires authentication)
+router.post('/update-user-account', authMiddleware, updateUserAccount); // Retrieve all user data (requires authentication)
 
-router.put(
+router.post(
   '/update-photo-url',
   authMiddleware,
   userController.updateProfilePicture
