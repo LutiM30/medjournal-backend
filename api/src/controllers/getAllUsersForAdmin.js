@@ -1,6 +1,9 @@
 const { auth } = require('../config/firebase');
-const { processUserRecord, isNotAdmin } = require('../utils/functions.js');
-const SearchQuery = require('../utils/searchQuery.js');
+const {
+  processUserRecord,
+  isNotAdmin,
+  SearchQuery,
+} = require('../utils/functions.js');
 
 const pageTokensMap = new Map();
 const searchResultsCache = new Map();

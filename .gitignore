@@ -4,3 +4,4 @@ serviceAccountKey.json
 /api/src/config/firebase.js
 /api/src/config/firebase.js
 api/src/config/firebase.js
+.vercel
