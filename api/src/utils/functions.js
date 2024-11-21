@@ -2,6 +2,7 @@ const { firestore } = require('../config/firebase');
 const { MESSAGES, VALID_ROLES, ADMIN_ROLE } = require('./constants');
 const { Timestamp } = require('firebase-admin/firestore');
 const fuzzysort = require('fuzzysort');
+const { auth } = require('../config/firebase');
 
 const AddToDatabase = async (data, role) => {
   if (!VALID_ROLES.includes(role)) {
@@ -88,7 +89,7 @@ const isNotAdmin = (req, res) => {
 
 const getUsersDataArr = (ids) => ids.map((id) => ({ uid: id }));
 const getUsersBasedOnId = async (ids = []) =>
-  await auth.getUsers(this.getUsersDataArr(ids));
+  await auth.getUsers(getUsersDataArr(ids));
 
 /**
  * Flattens an object and prepares it for fuzzy searching while handling special cases
