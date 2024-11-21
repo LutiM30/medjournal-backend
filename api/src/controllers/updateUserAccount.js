@@ -1,6 +1,6 @@
 const { auth, firestore } = require('../config/firebase');
 const { COLLECTIONS } = require('../utils/constants');
-const { isNotAdmin } = require('./userController');
+const { isNotAdmin } = require('../utils/functions');
 
 /**
  * Deletes users from both Firestore collections and Firebase Authentication.
